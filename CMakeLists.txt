@@ -415,9 +415,7 @@ else ()
 endif ()
 
 if (WIN32)
-  enable_language(RC)
-  list(APPEND BASE_SRCS builds/windows/ftdebug.c
-                        src/base/ftver.rc)
+  list(APPEND BASE_SRCS builds/windows/ftdebug.c)
 elseif (WINCE)
   list(APPEND BASE_SRCS builds/wince/ftdebug.c)
 else ()
@@ -531,7 +529,7 @@ if (NOT SKIP_INSTALL_HEADERS AND NOT SKIP_INSTALL_ALL)
   install(
     # Note the trailing slash in the argument to `DIRECTORY'!
     DIRECTORY ${PROJECT_SOURCE_DIR}/include/
-      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/freetype2
+      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
       COMPONENT headers
       PATTERN "internal" EXCLUDE
       PATTERN "ftconfig.h" EXCLUDE
@@ -539,7 +537,7 @@ if (NOT SKIP_INSTALL_HEADERS AND NOT SKIP_INSTALL_ALL)
   install(
     FILES ${PROJECT_BINARY_DIR}/include/freetype/config/ftconfig.h
           ${PROJECT_BINARY_DIR}/include/freetype/config/ftoption.h
-      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/freetype2/freetype/config
+      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/freetype/config
       COMPONENT headers)
 endif ()
 
