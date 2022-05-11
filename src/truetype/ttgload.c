@@ -1104,8 +1104,8 @@
 
           for ( ; vec < limit; vec++, u++ )
           {
-            vec->x = ( FT_MulFix( u->x, x_scale ) + 32 ) >> 6;
-            vec->y = ( FT_MulFix( u->y, y_scale ) + 32 ) >> 6;
+            vec->x = ADD_LONG( FT_MulFix( u->x, x_scale ), 32 ) >> 6;
+            vec->y = ADD_LONG( FT_MulFix( u->y, y_scale ), 32 ) >> 6;
           }
         }
         else
@@ -1228,8 +1228,8 @@
       p1 = gloader->base.outline.points + k;
       p2 = gloader->base.outline.points + l;
 
-      x = p1->x - p2->x;
-      y = p1->y - p2->y;
+      x = SUB_LONG( p1->x, p2->x );
+      y = SUB_LONG( p1->y, p2->y );
     }
     else
     {
@@ -2255,7 +2255,7 @@
     if ( loader->widthp )
       glyph->metrics.horiAdvance = loader->widthp[glyph_index] * 64;
     else
-      glyph->metrics.horiAdvance = SUB_LONG(loader->pp2.x, loader->pp1.x);
+      glyph->metrics.horiAdvance = SUB_LONG( loader->pp2.x, loader->pp1.x );
 
     /* set glyph dimensions */
     glyph->metrics.width  = SUB_LONG( bbox.xMax, bbox.xMin );
@@ -2787,11 +2787,12 @@
    *   A function used to load a single glyph within a given glyph slot,
    *   for a given size.
    *
-   * @Input:
+   * @InOut:
    *   glyph ::
    *     A handle to a target slot object where the glyph
    *     will be loaded.
    *
+   * @Input:
    *   size ::
    *     A handle to the source face size at which the glyph
    *     must be scaled/loaded.
@@ -2896,14 +2897,47 @@
       }
       else
       {
-        if ( FT_IS_SCALABLE( glyph->face ) )
+        if ( FT_IS_SCALABLE( glyph->face ) ||
+             FT_HAS_SBIX( glyph->face )    )
         {
+          TT_Face  face = (TT_Face)glyph->face;
+
+
           /* for the bbox we need the header only */
           (void)tt_loader_init( &loader, size, glyph, load_flags, TRUE );
           (void)load_truetype_glyph( &loader, glyph_index, 0, TRUE );
           tt_loader_done( &loader );
           glyph->linearHoriAdvance = loader.linear;
           glyph->linearVertAdvance = loader.vadvance;
+
+          /* Bitmaps from the 'sbix' table need special treatment:  */
+          /* if there is a glyph contour, the bitmap origin must be */
+          /* shifted to be relative to the lower left corner of the */
+          /* glyph bounding box, also taking the left-side bearing  */
+          /* (or top bearing) into account.                         */
+          if ( face->sbit_table_type == TT_SBIT_TABLE_TYPE_SBIX &&
+               loader.n_contours > 0                            )
+          {
+            FT_Int  bitmap_left;
+            FT_Int  bitmap_top;
+
+
+            if ( load_flags & FT_LOAD_VERTICAL_LAYOUT )
+            {
+              /* This is a guess, since Apple's CoreText engine doesn't */
+              /* really do vertical typesetting.                        */
+              bitmap_left = loader.bbox.xMin;
+              bitmap_top  = loader.top_bearing;
+            }
+            else
+            {
+              bitmap_left = loader.left_bearing;
+              bitmap_top  = loader.bbox.yMin;
+            }
+
+            glyph->bitmap_left += FT_MulFix( bitmap_left, x_scale ) >> 6;
+            glyph->bitmap_top  += FT_MulFix( bitmap_top,  y_scale ) >> 6;
+          }
 
           /* sanity checks: if `xxxAdvance' in the sbit metric */
           /* structure isn't set, use `linearXXXAdvance'      */
@@ -2919,6 +2953,12 @@
       }
     }
 
+    if ( load_flags & FT_LOAD_SBITS_ONLY )
+    {
+      error = FT_THROW( Invalid_Argument );
+      goto Exit;
+    }
+
 #endif /* TT_CONFIG_OPTION_EMBEDDED_BITMAPS */
 
     /* if FT_LOAD_NO_SCALE is not set, `ttmetrics' must be valid */
@@ -2928,11 +2968,67 @@
       goto Exit;
     }
 
-    if ( load_flags & FT_LOAD_SBITS_ONLY )
+#ifdef FT_CONFIG_OPTION_SVG
+
+    /* check for OT-SVG */
+    if ( ( load_flags & FT_LOAD_COLOR ) && ( (TT_Face)glyph->face )->svg )
+    {
+      SFNT_Service  sfnt;
+
+      FT_Short   leftBearing;
+      FT_Short   topBearing;
+      FT_UShort  advanceX;
+      FT_UShort  advanceY;
+
+
+      FT_TRACE3(( "Trying to load SVG glyph\n" ));
+      sfnt = (SFNT_Service)( (TT_Face)glyph->face )->sfnt;
+
+      error = sfnt->load_svg_doc( glyph, glyph_index );
+      if ( !error )
+      {
+        TT_Face  face = (TT_Face)glyph->face;
+
+
+        FT_TRACE3(( "Successfully loaded SVG glyph\n" ));
+
+        glyph->format = FT_GLYPH_FORMAT_SVG;
+
+        sfnt->get_metrics( face,
+                           FALSE,
+                           glyph_index,
+                           &leftBearing,
+                           &advanceX );
+        sfnt->get_metrics( face,
+                           TRUE,
+                           glyph_index,
+                           &topBearing,
+                           &advanceY );
+
+        advanceX = (FT_UShort)FT_MulDiv( advanceX,
+                                         glyph->face->size->metrics.x_ppem,
+                                         glyph->face->units_per_EM );
+        advanceY = (FT_UShort)FT_MulDiv( advanceY,
+                                         glyph->face->size->metrics.y_ppem,
+                                         glyph->face->units_per_EM );
+
+        glyph->metrics.horiAdvance = advanceX << 6;
+        glyph->metrics.vertAdvance = advanceY << 6;
+
+        return error;
+      }
+
+      FT_TRACE3(( "Failed to load SVG glyph\n" ));
+    }
+
+    /* return immediately if we only want SVG glyphs */
+    if ( load_flags & FT_LOAD_SVG_ONLY )
     {
       error = FT_THROW( Invalid_Argument );
       goto Exit;
     }
+
+#endif /* FT_CONFIG_OPTION_SVG */
 
     error = tt_loader_init( &loader, size, glyph, load_flags, FALSE );
     if ( error )

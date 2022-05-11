@@ -92,7 +92,7 @@
 #undef  T1CODE
 #define T1CODE        T1_FIELD_LOCATION_BBOX
 
-    T1_FIELD_BBOX("FontBBox", xMin, 0 )
+    T1_FIELD_BBOX( "FontBBox", xMin, 0 )
 
     T1_FIELD_CALLBACK( "FontMatrix",  t42_parse_font_matrix, 0 )
     T1_FIELD_CALLBACK( "Encoding",    t42_parse_encoding,    0 )
@@ -363,8 +363,8 @@
 
       /* we use a T1_Table to store our charnames */
       loader->num_chars = encode->num_chars = count;
-      if ( FT_NEW_ARRAY( encode->char_index, count )     ||
-           FT_NEW_ARRAY( encode->char_name,  count )     ||
+      if ( FT_QNEW_ARRAY( encode->char_index, count )    ||
+           FT_QNEW_ARRAY( encode->char_name,  count )    ||
            FT_SET_ERROR( psaux->ps_table_funcs->init(
                            char_table, count, memory ) ) )
       {
@@ -1008,9 +1008,9 @@
         name_table->elements[n][len] = '\0';
 
         /* record index of /.notdef */
-        if ( *cur == '.'                                              &&
+        if ( *cur == '.'                                                &&
              ft_strcmp( ".notdef",
-                        (const char*)(name_table->elements[n]) ) == 0 )
+                        (const char*)( name_table->elements[n] ) ) == 0 )
         {
           notdef_index = n;
           notdef_found = 1;
